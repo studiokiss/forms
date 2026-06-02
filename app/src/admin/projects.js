@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { escapeHtml, formatDate, openModal, closeModal, customConfirm } from './utils.js';
+import { escapeHtml, formatDate, openModal, closeModal } from './utils.js';
 import { api } from './api.js';
 import { loadForms, editForm } from './forms.js';
 
@@ -433,15 +433,27 @@ async function editProject(id) {
 }
 
 async function deleteProject(id) {
-    customConfirm('Supprimer ce projet et tous ses formulaires ?', async () => {
-        try {
-            await api(`/admin/projects/${id}`, { method: 'DELETE' });
-            loadProjects();
-            loadForms();
-        } catch (error) {
-            alert('Erreur: ' + error.message);
-        }
-    });
+    const project = state.projects.find(p => p.id === id);
+    const name = project ? project.name : '';
+
+    // Confirmation forte : la suppression est destructive (formulaires + soumissions
+    // effacés en cascade). On exige la saisie du nom exact du projet.
+    const typed = window.prompt(
+        `Suppression DÉFINITIVE du projet « ${name} » : ses formulaires et toutes leurs soumissions seront effacés, sans retour possible.\n\nPour confirmer, tape le nom exact du projet :`
+    );
+    if (typed === null) return;
+    if (typed.trim() !== name) {
+        alert('Le nom ne correspond pas — suppression annulée.');
+        return;
+    }
+
+    try {
+        await api(`/admin/projects/${id}`, { method: 'DELETE' });
+        loadProjects();
+        loadForms();
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    }
 }
 
 

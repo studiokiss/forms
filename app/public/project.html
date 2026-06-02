@@ -6,6 +6,16 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Questionnaires - Studio Kiss</title>
     <link rel="stylesheet" href="/css/style.css">
+    <style>
+      .resume-note { font-size: 13px; color: var(--gray-600, #666); background: rgba(0,0,0,.04); border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+      .field-error { color: #d33; font-size: 13px; margin-top: 4px; }
+      .field.error .field-input, .field.error .field-textarea, .field.error .field-select { border-color: #d33; }
+      .recap-block { margin-bottom: 24px; }
+      .recap-block h3 { text-transform: uppercase; letter-spacing: 1px; font-size: 14px; margin-bottom: 10px; }
+      .recap-row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,.08); }
+      .recap-label { color: var(--gray-600, #666); }
+      .recap-value { font-weight: 500; text-align: right; white-space: pre-wrap; }
+    </style>
 </head>
 <body>
     <div class="container" id="project-container">
@@ -31,6 +41,8 @@
                 <p class="subtitle">Questionnaires à compléter</p>
             </header>
 
+            <p class="resume-note">✓ Vos réponses sont enregistrées automatiquement. Vous pouvez fermer cette page et reprendre plus tard avec ce même lien.</p>
+
             <!-- Navigation -->
             <div class="step-nav-container">
                 <nav class="step-nav" id="project-nav"></nav>
@@ -44,9 +56,19 @@
             <div id="panels-container"></div>
 
             <!-- Navigation Buttons -->
-            <div class="nav-buttons">
+            <div class="nav-buttons" id="main-nav">
                 <button class="btn btn-secondary" id="prev-btn" onclick="prevPanel()">Précédent</button>
                 <button class="btn btn-primary" id="next-btn" onclick="nextPanel()">Suivant</button>
+            </div>
+
+            <!-- Récapitulatif avant envoi -->
+            <div id="recap-view" class="hidden">
+                <h2 class="section-title">Vérifiez vos réponses</h2>
+                <div id="recap-content"></div>
+                <div class="nav-buttons">
+                    <button class="btn btn-secondary" onclick="backFromRecap()">Modifier mes réponses</button>
+                    <button class="btn btn-primary" id="recap-confirm-btn" onclick="confirmSubmit()">Confirmer et envoyer</button>
+                </div>
             </div>
 
             <!-- Auto-save message -->
@@ -630,24 +652,8 @@
         }
 
         async function nextPanel() {
-            // Validate current panel
             const currentPanel = document.getElementById(`panel-${currentPanelIndex}`);
-            const inputs = currentPanel.querySelectorAll('input[required], textarea[required], select[required]');
-            let valid = true;
-
-            inputs.forEach(input => {
-                if (!input.value) {
-                    valid = false;
-                    input.classList.add('error');
-                } else {
-                    input.classList.remove('error');
-                }
-            });
-
-            if (!valid) {
-                alert('Veuillez remplir tous les champs obligatoires');
-                return;
-            }
+            if (!validatePanel(currentPanel)) return;
 
             // Sauvegarde serveur du panel courant (brouillon)
             const current = panels[currentPanelIndex];
@@ -660,7 +666,85 @@
             if (currentPanelIndex < panels.length - 1) {
                 goToPanel(currentPanelIndex + 1);
             } else {
+                showRecap();
+            }
+        }
+
+        // Validation inline : message sous chaque champ manquant + focus/scroll
+        // sur le premier en erreur (remplace l'alerte générique).
+        function validatePanel(panel) {
+            panel.querySelectorAll('.field-error').forEach(el => el.remove());
+            panel.querySelectorAll('.field.error').forEach(el => el.classList.remove('error'));
+            const required = panel.querySelectorAll('input[required], textarea[required], select[required]');
+            let firstInvalid = null;
+            required.forEach(input => {
+                const empty = (input.type === 'radio' || input.type === 'checkbox')
+                    ? !panel.querySelector(`input[name="${input.name}"]:checked`)
+                    : !input.value.trim();
+                if (empty) {
+                    markFieldError(input);
+                    if (!firstInvalid) firstInvalid = input;
+                }
+            });
+            if (firstInvalid) {
+                firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                try { firstInvalid.focus({ preventScroll: true }); } catch (e) {}
+                return false;
+            }
+            return true;
+        }
+
+        function markFieldError(input) {
+            const field = input.closest('.field');
+            if (!field || field.querySelector('.field-error')) return;
+            field.classList.add('error');
+            const msg = document.createElement('div');
+            msg.className = 'field-error';
+            msg.textContent = 'Ce champ est obligatoire';
+            field.appendChild(msg);
+            const clear = () => { field.classList.remove('error'); const m = field.querySelector('.field-error'); if (m) m.remove(); };
+            input.addEventListener('input', clear, { once: true });
+            input.addEventListener('change', clear, { once: true });
+        }
+
+        // Récapitulatif avant l'envoi final
+        function showRecap() {
+            const fmt = (v) => Array.isArray(v) ? (v.length ? v.join(', ') : '—') : (v != null && String(v).trim() ? String(v) : '—');
+            const blocks = panels.map(panel => {
+                const sections = panel.type === 'shared' ? panel.sections : (panel.structure ? panel.structure.sections : []);
+                const dataObj = panel.type === 'shared' ? sharedData : (formsData[panel.id] || {});
+                const rows = [];
+                sections.forEach(section => section.fields.forEach(f => {
+                    rows.push(`<div class="recap-row"><span class="recap-label">${escapeHtml(f.label)}</span><span class="recap-value">${escapeHtml(fmt(dataObj[f.id]))}</span></div>`);
+                }));
+                return `<div class="recap-block"><h3>${escapeHtml(panel.title)}</h3>${rows.join('')}</div>`;
+            });
+            document.getElementById('recap-content').innerHTML = blocks.join('');
+            document.getElementById('panels-container').style.display = 'none';
+            document.getElementById('main-nav').style.display = 'none';
+            document.querySelector('.step-nav-container').style.display = 'none';
+            document.getElementById('recap-view').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function backFromRecap() {
+            document.getElementById('recap-view').classList.add('hidden');
+            document.getElementById('panels-container').style.display = '';
+            document.getElementById('main-nav').style.display = '';
+            document.querySelector('.step-nav-container').style.display = '';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function confirmSubmit() {
+            const btn = document.getElementById('recap-confirm-btn');
+            btn.disabled = true;
+            btn.textContent = 'Envoi…';
+            try {
                 await submitAll();
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Confirmer et envoyer';
+                alert('Erreur lors de l\'envoi, réessayez.');
             }
         }
 

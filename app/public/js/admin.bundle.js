@@ -1049,15 +1049,25 @@
     openProjectModal(project);
   }
   async function deleteProject(id) {
-    customConfirm("Supprimer ce projet et tous ses formulaires ?", async () => {
-      try {
-        await api(`/admin/projects/${id}`, { method: "DELETE" });
-        loadProjects();
-        loadForms();
-      } catch (error) {
-        alert("Erreur: " + error.message);
-      }
-    });
+    const project = state.projects.find((p) => p.id === id);
+    const name = project ? project.name : "";
+    const typed = window.prompt(
+      `Suppression D\xC9FINITIVE du projet \xAB ${name} \xBB : ses formulaires et toutes leurs soumissions seront effac\xE9s, sans retour possible.
+
+Pour confirmer, tape le nom exact du projet :`
+    );
+    if (typed === null) return;
+    if (typed.trim() !== name) {
+      alert("Le nom ne correspond pas \u2014 suppression annul\xE9e.");
+      return;
+    }
+    try {
+      await api(`/admin/projects/${id}`, { method: "DELETE" });
+      loadProjects();
+      loadForms();
+    } catch (error) {
+      alert("Erreur: " + error.message);
+    }
   }
 
   // src/admin/dashboard.js

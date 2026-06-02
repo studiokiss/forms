@@ -6,7 +6,7 @@ import { loadForms } from './forms.js';
 // ======== PROJECTS ========
 // Projects
 async function loadProjects() {
-    state.projects = await api('/admin/state.projects');
+    state.projects = await api('/admin/projects');
 
     if (state.projects.length === 0) {
         document.getElementById('projects-list').innerHTML = `
@@ -54,7 +54,7 @@ async function loadProjects() {
 async function openProjectModal(project = null) {
     // Charger les state.forms d'abord si pas encore fait
     if (state.forms.length === 0) {
-        state.forms = await api('/admin/state.forms');
+        state.forms = await api('/admin/forms');
     }
 
     document.getElementById('modal-project-title').textContent = project ? 'Modifier le projet' : 'Nouveau projet';
@@ -110,7 +110,7 @@ async function openProjectModal(project = null) {
 
 function updateProjectFormsList(initialOrder = null) {
     const formsList = document.getElementById('project-forms-list');
-    const checkboxes = document.querySelectorAll('#project-state.forms-available input[type="checkbox"]:checked');
+    const checkboxes = document.querySelectorAll('#project-forms-available input[type="checkbox"]:checked');
     const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
 
     if (selectedIds.length === 0) {
@@ -226,12 +226,12 @@ async function saveProject() {
         let projectId = id;
 
         if (id) {
-            await api(`/admin/state.projects/${id}`, {
+            await api(`/admin/projects/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
             });
         } else {
-            const newProject = await api('/admin/state.projects', {
+            const newProject = await api('/admin/projects', {
                 method: 'POST',
                 body: JSON.stringify(data)
             });
@@ -247,7 +247,7 @@ async function saveProject() {
             const formData = new FormData();
             formData.append('logo', state.pendingLogoFile);
 
-            const uploadResponse = await fetch(`/api/admin/state.projects/${projectId}/logo`, {
+            const uploadResponse = await fetch(`/api/admin/projects/${projectId}/logo`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${state.token}`
@@ -267,13 +267,13 @@ async function saveProject() {
             });
         } else if (state.currentProjectLogo && state.currentProjectLogo !== existingLogo) {
             // Logo sélectionné depuis la médiathèque - juste mettre à jour le chemin
-            await api(`/admin/state.projects/${projectId}`, {
+            await api(`/admin/projects/${projectId}`, {
                 method: 'PUT',
                 body: JSON.stringify({ logo: state.currentProjectLogo })
             });
         } else if (state.currentProjectLogo === null && existingLogo) {
             // Logo supprimé
-            await fetch(`/api/admin/state.projects/${id}/logo`, {
+            await fetch(`/api/admin/projects/${id}/logo`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${state.token}`
@@ -410,7 +410,7 @@ async function editProject(id) {
 async function deleteProject(id) {
     customConfirm('Supprimer ce projet et tous ses formulaires ?', async () => {
         try {
-            await api(`/admin/state.projects/${id}`, { method: 'DELETE' });
+            await api(`/admin/projects/${id}`, { method: 'DELETE' });
             loadProjects();
             loadForms();
         } catch (error) {

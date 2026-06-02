@@ -95,7 +95,7 @@ async function downloadBackup() {
         // Extraire le nom du fichier du header Content-Disposition
         const disposition = response.headers.get('Content-Disposition');
         const filenameMatch = disposition && disposition.match(/filename="(.+)"/);
-        a.download = filenameMatch ? filenameMatch[1] : 'kiss-state.forms-backup.db';
+        a.download = filenameMatch ? filenameMatch[1] : 'kiss-forms-backup.db';
 
         document.body.appendChild(a);
         a.click();

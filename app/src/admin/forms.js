@@ -9,7 +9,7 @@ import { navigateTo } from './router.js';
 // ======== FORMS ========
 // Forms
 async function loadForms() {
-    state.forms = await api('/admin/state.forms');
+    state.forms = await api('/admin/forms');
 
     // Update template select
     document.getElementById('new-form-template').innerHTML = `
@@ -79,7 +79,7 @@ async function createForm() {
     }
 
     try {
-        const form = await api('/admin/state.forms', {
+        const form = await api('/admin/forms', {
             method: 'POST',
             body: JSON.stringify({ title, template_id })
         });
@@ -92,7 +92,7 @@ async function createForm() {
 }
 
 async function editForm(id, updateHash = true) {
-    const form = await api(`/admin/state.forms/${id}`);
+    const form = await api(`/admin/forms/${id}`);
     state.currentFormId = id;
     state.currentFormStructure = JSON.parse(form.structure);
     state.currentFormStatus = form.status || 'draft';
@@ -117,7 +117,7 @@ async function duplicateForm(id) {
     if (!title) return;
 
     try {
-        const form = await api(`/admin/state.forms/${id}/duplicate`, {
+        const form = await api(`/admin/forms/${id}/duplicate`, {
             method: 'POST',
             body: JSON.stringify({ title })
         });
@@ -131,7 +131,7 @@ async function duplicateForm(id) {
 
 async function deleteForm(id) {
     customConfirm('Supprimer ce formulaire et toutes ses soumissions ?', async () => {
-        await api(`/admin/state.forms/${id}`, { method: 'DELETE' });
+        await api(`/admin/forms/${id}`, { method: 'DELETE' });
         loadForms();
     });
 }

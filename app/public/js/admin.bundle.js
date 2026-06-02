@@ -523,7 +523,7 @@
     state.currentFormStructure.title = title;
     const newStatus = status || state.currentFormStatus;
     try {
-      const updatedForm = await api(`/admin/state.forms/${state.currentFormId}`, {
+      const updatedForm = await api(`/admin/forms/${state.currentFormId}`, {
         method: "PUT",
         body: JSON.stringify({
           title,
@@ -585,7 +585,7 @@
 
   // src/admin/forms.js
   async function loadForms() {
-    state.forms = await api("/admin/state.forms");
+    state.forms = await api("/admin/forms");
     document.getElementById("new-form-template").innerHTML = `
         <option value="">Formulaire vide</option>
         ${state.templates.map((t) => `<option value="${parseInt(t.id)}">${escapeHtml(t.name)}</option>`).join("")}
@@ -647,7 +647,7 @@
       return;
     }
     try {
-      const form = await api("/admin/state.forms", {
+      const form = await api("/admin/forms", {
         method: "POST",
         body: JSON.stringify({ title, template_id })
       });
@@ -658,7 +658,7 @@
     }
   }
   async function editForm(id, updateHash = true) {
-    const form = await api(`/admin/state.forms/${id}`);
+    const form = await api(`/admin/forms/${id}`);
     state.currentFormId = id;
     state.currentFormStructure = JSON.parse(form.structure);
     state.currentFormStatus = form.status || "draft";
@@ -676,7 +676,7 @@
     const title = prompt("Titre du nouveau formulaire:");
     if (!title) return;
     try {
-      const form = await api(`/admin/state.forms/${id}/duplicate`, {
+      const form = await api(`/admin/forms/${id}/duplicate`, {
         method: "POST",
         body: JSON.stringify({ title })
       });
@@ -688,14 +688,14 @@
   }
   async function deleteForm(id) {
     customConfirm("Supprimer ce formulaire et toutes ses soumissions ?", async () => {
-      await api(`/admin/state.forms/${id}`, { method: "DELETE" });
+      await api(`/admin/forms/${id}`, { method: "DELETE" });
       loadForms();
     });
   }
 
   // src/admin/projects.js
   async function loadProjects() {
-    state.projects = await api("/admin/state.projects");
+    state.projects = await api("/admin/projects");
     if (state.projects.length === 0) {
       document.getElementById("projects-list").innerHTML = `
             <div class="empty-state">
@@ -740,7 +740,7 @@
   }
   async function openProjectModal(project = null) {
     if (state.forms.length === 0) {
-      state.forms = await api("/admin/state.forms");
+      state.forms = await api("/admin/forms");
     }
     document.getElementById("modal-project-title").textContent = project ? "Modifier le projet" : "Nouveau projet";
     document.getElementById("project-name-input").value = project?.name || "";
@@ -781,7 +781,7 @@
   }
   function updateProjectFormsList(initialOrder = null) {
     const formsList = document.getElementById("project-forms-list");
-    const checkboxes = document.querySelectorAll('#project-state.forms-available input[type="checkbox"]:checked');
+    const checkboxes = document.querySelectorAll('#project-forms-available input[type="checkbox"]:checked');
     const selectedIds = Array.from(checkboxes).map((cb) => parseInt(cb.value));
     if (selectedIds.length === 0) {
       formsList.innerHTML = '<p style="color: var(--gray-500); font-size: 13px;">S\xE9lectionnez des formulaires ci-dessus</p>';
@@ -869,12 +869,12 @@
       }
       let projectId = id;
       if (id) {
-        await api(`/admin/state.projects/${id}`, {
+        await api(`/admin/projects/${id}`, {
           method: "PUT",
           body: JSON.stringify(data)
         });
       } else {
-        const newProject = await api("/admin/state.projects", {
+        const newProject = await api("/admin/projects", {
           method: "POST",
           body: JSON.stringify(data)
         });
@@ -885,7 +885,7 @@
       if (state.pendingLogoFile && projectId) {
         const formData = new FormData();
         formData.append("logo", state.pendingLogoFile);
-        const uploadResponse = await fetch(`/api/admin/state.projects/${projectId}/logo`, {
+        const uploadResponse = await fetch(`/api/admin/projects/${projectId}/logo`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${state.token}`
@@ -902,12 +902,12 @@
           body: mediaFormData
         });
       } else if (state.currentProjectLogo && state.currentProjectLogo !== existingLogo) {
-        await api(`/admin/state.projects/${projectId}`, {
+        await api(`/admin/projects/${projectId}`, {
           method: "PUT",
           body: JSON.stringify({ logo: state.currentProjectLogo })
         });
       } else if (state.currentProjectLogo === null && existingLogo) {
-        await fetch(`/api/admin/state.projects/${id}/logo`, {
+        await fetch(`/api/admin/projects/${id}/logo`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${state.token}`
@@ -1018,7 +1018,7 @@
   async function deleteProject(id) {
     customConfirm("Supprimer ce projet et tous ses formulaires ?", async () => {
       try {
-        await api(`/admin/state.projects/${id}`, { method: "DELETE" });
+        await api(`/admin/projects/${id}`, { method: "DELETE" });
         loadProjects();
         loadForms();
       } catch (error) {
@@ -1055,16 +1055,16 @@
   async function showAdminView() {
     document.getElementById("login-view").classList.add("hidden");
     document.getElementById("admin-view").classList.remove("hidden");
-    state.templates = await api("/admin/state.templates");
-    state.forms = await api("/admin/state.forms");
-    state.projects = await api("/admin/state.projects");
+    state.templates = await api("/admin/templates");
+    state.forms = await api("/admin/forms");
+    state.projects = await api("/admin/projects");
     await handleRoute();
   }
   async function loadDashboard() {
     const [stats, allProjects, allForms] = await Promise.all([
       api("/admin/stats"),
-      api("/admin/state.projects"),
-      api("/admin/state.forms")
+      api("/admin/projects"),
+      api("/admin/forms")
     ]);
     const statsGridEl = document.getElementById("stats-grid");
     if (statsGridEl) {
@@ -1160,7 +1160,7 @@
       try {
         const formId = parseInt(form.id);
         if (isNaN(formId) || formId <= 0) continue;
-        const subs = await api(`/admin/state.forms/${formId}/submissions`);
+        const subs = await api(`/admin/forms/${formId}/submissions`);
         if (Array.isArray(subs)) {
           recentSubmissions = recentSubmissions.concat(
             subs.slice(0, 3).map((s) => ({ ...s, form_title: form.title }))
@@ -1274,7 +1274,7 @@
       a.href = url;
       const disposition = response.headers.get("Content-Disposition");
       const filenameMatch = disposition && disposition.match(/filename="(.+)"/);
-      a.download = filenameMatch ? filenameMatch[1] : "kiss-state.forms-backup.db";
+      a.download = filenameMatch ? filenameMatch[1] : "kiss-forms-backup.db";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1339,7 +1339,7 @@
   }
   async function exportProjectPDF(projectId) {
     try {
-      const response = await fetch(`/api/admin/state.projects/${projectId}/submissions/pdf`, {
+      const response = await fetch(`/api/admin/projects/${projectId}/submissions/pdf`, {
         headers: {
           "Authorization": `Bearer ${state.token}`
         }
@@ -1403,7 +1403,7 @@
   }
   async function exportProjectJPG(projectId) {
     try {
-      const response = await fetch(`/api/admin/state.projects/${projectId}/submissions/jpg`, {
+      const response = await fetch(`/api/admin/projects/${projectId}/submissions/jpg`, {
         headers: {
           "Authorization": `Bearer ${state.token}`
         }
@@ -1499,7 +1499,7 @@
     state.projectSubmissionsData = [];
     for (const formId of formIds) {
       try {
-        const subs = await api(`/admin/state.forms/${formId}/submissions`);
+        const subs = await api(`/admin/forms/${formId}/submissions`);
         const form = state.forms.find((f) => f.id === formId);
         if (!Array.isArray(subs)) continue;
         const sortedSubs = subs.map((s) => ({ ...s, form_title: form?.title || "Formulaire inconnu", form_id: formId })).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));

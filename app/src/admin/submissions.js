@@ -84,7 +84,7 @@ async function loadSubmissions() {
     state.projectSubmissionsData = [];
     for (const formId of formIds) {
         try {
-            const subs = await api(`/admin/state.forms/${formId}/submissions`);
+            const subs = await api(`/admin/forms/${formId}/submissions`);
             const form = state.forms.find(f => f.id === formId);
 
             // Vérifier que subs est bien un tableau

@@ -18,6 +18,8 @@ let formStructure = null;
 let submissionId = null;
 let wasAlreadySubmitted = false;
 let autoSaveTimeout = null;
+let isAutoSaving = false;
+let pendingAutoSave = false;
 
 // Get slug and prefill from URL: /f/slug or /f/slug/prefillData
 const pathParts = window.location.pathname.split('/f/')[1]?.split('/') || [];
@@ -334,15 +336,15 @@ function updateConditionalFields() {
 
 // Auto-save
 function setupAutoSave() {
-    // Save to localStorage on any change
-    document.getElementById('questionnaire-form').addEventListener('change', saveToLocalStorage);
+    document.getElementById('questionnaire-form').addEventListener('change', scheduleAutoSave);
 }
 
 function scheduleAutoSave() {
     clearTimeout(autoSaveTimeout);
-    autoSaveTimeout = setTimeout(saveToLocalStorage, 1000);
+    autoSaveTimeout = setTimeout(autoSaveToServer, 1500);
 }
 
+// Cache local de résilience (hors ligne) — n'affiche aucun message
 function saveToLocalStorage() {
     updateFormData();
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -351,8 +353,29 @@ function saveToLocalStorage() {
         wasAlreadySubmitted,
         savedAt: new Date().toISOString()
     }));
+}
 
-    showAutoSaveMessage('Brouillon sauvegardé automatiquement');
+// Sauvegarde serveur automatique. Sérialisée : une requête à la fois, pour
+// réutiliser le submissionId renvoyé et ne jamais créer de soumission en double.
+async function autoSaveToServer() {
+    if (isAutoSaving) { pendingAutoSave = true; return; }
+    isAutoSaving = true;
+    updateFormData();
+    try {
+        const result = await api(`/form/${slug}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({ data: formData, submission_id: submissionId, action: 'save' })
+        });
+        submissionId = result.id;
+        saveToLocalStorage();
+        showAutoSaveMessage('Brouillon enregistré');
+    } catch (error) {
+        saveToLocalStorage();
+        showAutoSaveMessage('Hors ligne — sauvegardé sur cet appareil');
+    } finally {
+        isAutoSaving = false;
+        if (pendingAutoSave) { pendingAutoSave = false; scheduleAutoSave(); }
+    }
 }
 
 function showAutoSaveMessage(message) {
@@ -390,6 +413,10 @@ async function saveDraft() {
 // Submit form
 async function submitForm(e) {
     e.preventDefault();
+    // Neutraliser un auto-save planifié et attendre celui éventuellement en vol :
+    // garantit qu'on réutilise son submissionId au lieu de créer une 2e soumission.
+    clearTimeout(autoSaveTimeout);
+    while (isAutoSaving) { await new Promise(r => setTimeout(r, 50)); }
     updateFormData();
 
     // Validate required fields

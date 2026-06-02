@@ -85,6 +85,9 @@ try {
 try {
   db.exec(`ALTER TABLE projects ADD COLUMN logo TEXT`);
 } catch (e) {}
+try {
+  db.exec(`ALTER TABLE forms ADD COLUMN position INTEGER DEFAULT 0`);
+} catch (e) {}
 
 // Table médiathèque
 try {
@@ -185,6 +188,45 @@ if (templateCount.count === 0) {
 
   insertTemplate.run('Formulaire de contact', JSON.stringify(templateContact));
   insertTemplate.run('Enquête de satisfaction', JSON.stringify(templateSatisfaction));
+}
+
+// Migration v1 — modèle "gabarit -> instance de projet".
+// Réconcilie l'ancien projects.form_order (liste d'IDs) vers la source de
+// vérité forms.project_id + forms.position, puis amorce la bibliothèque en
+// clonant chaque instance en gabarit (project_id NULL). Idempotente.
+const modelMigrated = db.prepare("SELECT value FROM settings WHERE key = 'model_instances_v1'").get();
+if (!modelMigrated) {
+  const { nanoid } = require('./utils/nanoid');
+  const migrate = db.transaction(() => {
+    const claimed = new Set();
+    const projects = db.prepare('SELECT id, form_order FROM projects').all();
+    for (const project of projects) {
+      let order;
+      try { order = JSON.parse(project.form_order || '[]'); } catch (e) { order = []; }
+      const ids = [...new Set(order.filter(id => Number.isInteger(id) && id > 0))];
+      ids.forEach((formId, index) => {
+        if (claimed.has(formId)) return;
+        const exists = db.prepare('SELECT id FROM forms WHERE id = ?').get(formId);
+        if (!exists) return;
+        db.prepare('UPDATE forms SET project_id = ?, position = ? WHERE id = ?').run(project.id, index, formId);
+        claimed.add(formId);
+      });
+    }
+
+    const instances = db.prepare('SELECT title, structure, status FROM forms WHERE project_id IS NOT NULL').all();
+    const insertGabarit = db.prepare(
+      'INSERT INTO forms (title, project_id, slug, structure, status, position) VALUES (?, NULL, ?, ?, ?, 0)'
+    );
+    const seenTitles = new Set();
+    for (const form of instances) {
+      if (seenTitles.has(form.title)) continue;
+      seenTitles.add(form.title);
+      insertGabarit.run(form.title, nanoid(12), form.structure, form.status);
+    }
+
+    db.prepare("INSERT INTO settings (key, value) VALUES ('model_instances_v1', '1')").run();
+  });
+  migrate();
 }
 
 module.exports = db;

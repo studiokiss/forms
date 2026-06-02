@@ -46,9 +46,9 @@ async function showAdminView() {
     document.getElementById('admin-view').classList.remove('hidden');
 
     // Load state.templates and state.forms for routing
-    state.templates = await api('/admin/state.templates');
-    state.forms = await api('/admin/state.forms');
-    state.projects = await api('/admin/state.projects');
+    state.templates = await api('/admin/templates');
+    state.forms = await api('/admin/forms');
+    state.projects = await api('/admin/projects');
 
     // Router vers la page actuelle (ou dashboard par défaut)
     await handleRoute();
@@ -59,8 +59,8 @@ async function loadDashboard() {
     // Charger toutes les données en parallèle
     const [stats, allProjects, allForms] = await Promise.all([
         api('/admin/stats'),
-        api('/admin/state.projects'),
-        api('/admin/state.forms')
+        api('/admin/projects'),
+        api('/admin/forms')
     ]);
 
     // Stats cliquables
@@ -90,7 +90,7 @@ async function loadDashboard() {
         projectsHtml = `
             <div class="dashboard-list">
                 ${allProjects.map(p => {
-                    const formsCount = p.form_order ? JSON.parse(p.form_order).length : 0;
+                    const formsCount = parseInt(p.forms_count) || 0;
                     return `
                         <div class="dashboard-item">
                             <div class="dashboard-item-info">
@@ -166,7 +166,7 @@ async function loadDashboard() {
         try {
             const formId = parseInt(form.id);
             if (isNaN(formId) || formId <= 0) continue;
-            const subs = await api(`/admin/state.forms/${formId}/submissions`);
+            const subs = await api(`/admin/forms/${formId}/submissions`);
             if (Array.isArray(subs)) {
                 recentSubmissions = recentSubmissions.concat(
                     subs.slice(0, 3).map(s => ({ ...s, form_title: form.title }))

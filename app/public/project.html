@@ -151,6 +151,8 @@
         let formsData = {};
         let currentPanelIndex = 0;
         let panels = []; // { type: 'shared' | 'form', id, title, structure }
+        let submissionIds = {}; // { [formId]: submissionId } — réutilisé pour ne pas dupliquer les soumissions
+        let autoSaveTimeout = null;
         const slug = window.location.pathname.split('/p/')[1];
         const STORAGE_KEY = `kiss_project_${slug}`;
 
@@ -208,6 +210,7 @@
                     const parsed = JSON.parse(stored);
                     sharedData = parsed.sharedData || {};
                     formsData = parsed.formsData || {};
+                    submissionIds = parsed.submissionIds || {};
                 } catch (e) {}
             }
 
@@ -217,13 +220,73 @@
             }
         }
 
+        // Cache local de résilience (hors ligne) — n'affiche aucun message
         function saveToStorage() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
                 sharedData,
                 formsData,
+                submissionIds,
                 savedAt: new Date().toISOString()
             }));
-            showAutoSaveMessage('Sauvegardé');
+        }
+
+        // --- Sauvegarde serveur, sérialisée par cible ('shared' ou formId) pour
+        //     réutiliser le submissionId et ne jamais créer de soumission en double ---
+        const saveChains = {};
+
+        function enqueueSave(key, task) {
+            const prev = saveChains[key] || Promise.resolve();
+            const next = prev.then(task, task);
+            saveChains[key] = next.catch(() => {});
+            return next;
+        }
+
+        function pushSharedData() {
+            return enqueueSave('shared', async () => {
+                await fetch(`/api/project/${slug}/shared-data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: sharedData })
+                });
+                saveToStorage();
+            });
+        }
+
+        function pushFormData(panel, action = 'save') {
+            return enqueueSave(panel.id, async () => {
+                const res = await fetch(`/api/form/${panel.slug}/submit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: formsData[panel.id] || {},
+                        submission_id: submissionIds[panel.id] || null,
+                        action
+                    })
+                });
+                const result = await res.json();
+                if (result && result.id) {
+                    submissionIds[panel.id] = result.id;
+                    saveToStorage();
+                }
+            });
+        }
+
+        function scheduleAutoSave() {
+            clearTimeout(autoSaveTimeout);
+            autoSaveTimeout = setTimeout(autoSaveCurrentPanel, 1200);
+        }
+
+        async function autoSaveCurrentPanel() {
+            saveToStorage();
+            const panel = panels[currentPanelIndex];
+            if (!panel) return;
+            try {
+                if (panel.type === 'shared') await pushSharedData();
+                else await pushFormData(panel, 'save');
+                showAutoSaveMessage('Enregistré');
+            } catch (e) {
+                showAutoSaveMessage('Hors ligne — sauvegardé sur cet appareil');
+            }
         }
 
         function buildPanels() {
@@ -396,8 +459,8 @@
 
             // Add event listeners
             container.querySelectorAll('input, textarea, select').forEach(input => {
-                input.addEventListener('change', handleInputChange);
-                input.addEventListener('input', debounce(saveToStorage, 1000));
+                input.addEventListener('change', (e) => { handleInputChange(e); scheduleAutoSave(); });
+                input.addEventListener('input', (e) => { handleInputChange(e); scheduleAutoSave(); });
             });
         }
 
@@ -564,48 +627,26 @@
                 return;
             }
 
-            // Save shared data to server
-            if (panels[currentPanelIndex].type === 'shared') {
-                await fetch(`/api/project/${slug}/shared-data`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: sharedData })
-                });
-            }
-
-            // Save form data to server
-            if (panels[currentPanelIndex].type === 'form') {
-                const panel = panels[currentPanelIndex];
-                await fetch(`/api/form/${panel.slug}/submit`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        data: formsData[panel.id] || {},
-                        action: currentPanelIndex === panels.length - 1 ? 'submit' : 'save'
-                    })
-                });
+            // Sauvegarde serveur du panel courant (brouillon)
+            const current = panels[currentPanelIndex];
+            if (current.type === 'shared') {
+                await pushSharedData();
+            } else {
+                await pushFormData(current, 'save');
             }
 
             if (currentPanelIndex < panels.length - 1) {
                 goToPanel(currentPanelIndex + 1);
             } else {
-                // All done - submit all
                 await submitAll();
             }
         }
 
         async function submitAll() {
-            // Submit all forms
+            await pushSharedData();
             for (const panel of panels) {
                 if (panel.type === 'form') {
-                    await fetch(`/api/form/${panel.slug}/submit`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            data: formsData[panel.id] || {},
-                            action: 'submit'
-                        })
-                    });
+                    await pushFormData(panel, 'submit');
                 }
             }
 
@@ -626,14 +667,6 @@
             el.textContent = message;
             el.style.opacity = '1';
             setTimeout(() => { el.style.opacity = '0'; }, 2000);
-        }
-
-        function debounce(func, wait) {
-            let timeout;
-            return function(...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), wait);
-            };
         }
 
         // Init

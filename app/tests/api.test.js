@@ -958,14 +958,13 @@ describe('API Admin - Export PDF', () => {
     // Créer un projet de test
     testProject = await createTestProject(app, token, 'Projet PDF Test');
 
-    // Créer un formulaire de test
-    testForm = await createTestForm(app, token, 'Formulaire PDF Test');
-
-    // Associer le formulaire au projet
-    await request(app)
-      .put(`/api/admin/projects/${testProject.id}`)
+    // Créer un gabarit, puis l'associer au projet (clone en instance)
+    const gabarit = await createTestForm(app, token, 'Formulaire PDF Test');
+    const instanceRes = await request(app)
+      .post(`/api/admin/projects/${testProject.id}/forms`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ form_order: [testForm.id] });
+      .send({ template_id: gabarit.id });
+    testForm = instanceRes.body;
 
     // Créer une soumission de test
     const submitRes = await request(app)
@@ -1216,5 +1215,143 @@ describe('Service PDF - Sécurité', () => {
       const doc = generateSubmissionPDF({ submission, form, project });
       doc.end();
     }).not.toThrow();
+  });
+});
+
+// =============================================================================
+// MODÈLE GABARIT / INSTANCE DE PROJET
+// =============================================================================
+
+describe('Modèle gabarit/instance de projet', () => {
+  let app, token;
+
+  beforeAll(async () => {
+    app = createTestApp();
+    token = await getAuthToken(app);
+  });
+
+  test('GET /admin/forms ne renvoie que les gabarits (hors projet)', async () => {
+    const gabarit = await createTestForm(app, token, 'Gabarit Biblio');
+    const project = await createTestProject(app, token, 'Projet Biblio');
+    await request(app)
+      .post(`/api/admin/projects/${project.id}/forms`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ template_id: gabarit.id });
+
+    const res = await request(app)
+      .get('/api/admin/forms')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.every(f => f.project_id === null)).toBe(true);
+    expect(res.body.some(f => f.id === gabarit.id)).toBe(true);
+  });
+
+  test('associer un gabarit clone une instance indépendante', async () => {
+    const gabarit = await createTestForm(app, token, 'Gabarit Source');
+    const project = await createTestProject(app, token, 'Projet Clone');
+
+    const instRes = await request(app)
+      .post(`/api/admin/projects/${project.id}/forms`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ template_id: gabarit.id });
+
+    expect(instRes.status).toBe(200);
+    const instance = instRes.body;
+    expect(instance.id).not.toBe(gabarit.id);
+    expect(instance.project_id).toBe(project.id);
+    expect(instance.slug).not.toBe(gabarit.slug);
+
+    // Modifier l'instance ne doit pas toucher le gabarit
+    await request(app)
+      .put(`/api/admin/forms/${instance.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Instance modifiée' });
+
+    const gabaritAfter = await request(app)
+      .get(`/api/admin/forms/${gabarit.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(gabaritAfter.body.title).toBe('Gabarit Source');
+  });
+
+  test('POST /projects avec template_ids clone les gabarits dans l\'ordre', async () => {
+    const g1 = await createTestForm(app, token, 'G1');
+    const g2 = await createTestForm(app, token, 'G2');
+
+    const res = await request(app)
+      .post('/api/admin/projects')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Projet Ordonné', template_ids: [g2.id, g1.id] });
+    expect(res.status).toBe(200);
+
+    const instances = (await request(app)
+      .get(`/api/admin/forms?project_id=${res.body.id}`)
+      .set('Authorization', `Bearer ${token}`)).body;
+
+    expect(instances.length).toBe(2);
+    expect(instances[0].position).toBe(0);
+    expect(instances[0].title).toBe('G2');
+    expect(instances[1].position).toBe(1);
+    expect(instances.every(f => f.id !== g1.id && f.id !== g2.id)).toBe(true);
+  });
+
+  test('PUT /projects réordonne et retire des instances', async () => {
+    const g1 = await createTestForm(app, token, 'R1');
+    const g2 = await createTestForm(app, token, 'R2');
+    const project = (await request(app)
+      .post('/api/admin/projects')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Projet Reorder', template_ids: [g1.id, g2.id] })).body;
+
+    let instances = (await request(app)
+      .get(`/api/admin/forms?project_id=${project.id}`)
+      .set('Authorization', `Bearer ${token}`)).body;
+    const i2 = instances[1];
+
+    await request(app)
+      .put(`/api/admin/projects/${project.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ form_order: [i2.id] });
+
+    instances = (await request(app)
+      .get(`/api/admin/forms?project_id=${project.id}`)
+      .set('Authorization', `Bearer ${token}`)).body;
+    expect(instances.length).toBe(1);
+    expect(instances[0].id).toBe(i2.id);
+    expect(instances[0].position).toBe(0);
+  });
+
+  test('supprimer un projet supprime ses instances et leurs soumissions', async () => {
+    const gabarit = await createTestForm(app, token, 'G Cascade');
+    const project = await createTestProject(app, token, 'Projet Cascade');
+    const instance = (await request(app)
+      .post(`/api/admin/projects/${project.id}/forms`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ template_id: gabarit.id })).body;
+
+    const sub = (await request(app)
+      .post(`/api/form/${instance.slug}/submit`)
+      .send({ data: { field1: 'x' }, action: 'submit' })).body;
+    expect(sub.id).toBeDefined();
+
+    await request(app)
+      .delete(`/api/admin/projects/${project.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    const instAfter = await request(app)
+      .get(`/api/admin/forms/${instance.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(instAfter.status).toBe(404);
+
+    const subAfter = await request(app)
+      .get(`/api/admin/submissions/${sub.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(subAfter.status).toBe(404);
+
+    // le gabarit source est conservé
+    const gabaritAfter = await request(app)
+      .get(`/api/admin/forms/${gabarit.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(gabaritAfter.status).toBe(200);
   });
 });

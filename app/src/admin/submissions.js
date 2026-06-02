@@ -62,15 +62,10 @@ async function loadSubmissions() {
         return;
     }
 
-    // Récupérer les IDs des formulaires du projet (dans l'ordre)
-    let formIds = [];
-    if (project.form_order) {
-        try {
-            formIds = JSON.parse(project.form_order);
-        } catch (e) {}
-    }
+    // Instances du projet (source de vérité : project_id + position)
+    const instances = await api(`/admin/forms?project_id=${state.currentProjectId}`);
 
-    if (formIds.length === 0) {
+    if (!Array.isArray(instances) || instances.length === 0) {
         document.getElementById('submissions-list').innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-title">Aucun formulaire</div>
@@ -80,29 +75,25 @@ async function loadSubmissions() {
         return;
     }
 
-    // Charger les soumissions groupées par formulaire
+    // Charger les soumissions groupées par formulaire (instance)
     state.projectSubmissionsData = [];
-    for (const formId of formIds) {
+    for (const form of instances) {
         try {
-            const subs = await api(`/admin/state.forms/${formId}/submissions`);
-            const form = state.forms.find(f => f.id === formId);
-
-            // Vérifier que subs est bien un tableau
+            const subs = await api(`/admin/forms/${form.id}/submissions`);
             if (!Array.isArray(subs)) continue;
 
-            // Trier les soumissions par date de mise à jour (plus récente d'abord)
             const sortedSubs = subs
-                .map(s => ({ ...s, form_title: form?.title || 'Formulaire inconnu', form_id: formId }))
+                .map(s => ({ ...s, form_title: form.title, form_id: form.id }))
                 .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
             state.projectSubmissionsData.push({
-                formId: formId,
-                formTitle: form?.title || 'Formulaire inconnu',
-                formSlug: form?.slug,
+                formId: form.id,
+                formTitle: form.title,
+                formSlug: form.slug,
                 submissions: sortedSubs
             });
         } catch (e) {
-            console.error(`Erreur chargement soumissions form ${formId}:`, e);
+            console.error(`Erreur chargement soumissions form ${form.id}:`, e);
         }
     }
 
@@ -132,7 +123,7 @@ async function loadSubmissions() {
     // Afficher la vue groupée par formulaire
     document.getElementById('submissions-list').innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <span style="color: var(--gray-600);">${formIds.length} formulaire(s), ${totalSubmissions} soumission(s)</span>
+            <span style="color: var(--gray-600);">${instances.length} formulaire(s), ${totalSubmissions} soumission(s)</span>
             <button class="btn btn-primary" onclick="exportProjectJPG(${parseInt(state.currentProjectId)})">
                 Exporter tout (ZIP)
             </button>

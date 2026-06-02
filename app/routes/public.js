@@ -14,7 +14,7 @@ router.get('/project/:slug', (req, res) => {
   }
 
   const project = db.prepare(`
-    SELECT id, name, slug, shared_sections, form_order, style, logo
+    SELECT id, name, slug, shared_sections, style, logo
     FROM projects
     WHERE slug = ?
   `).get(slug);
@@ -23,39 +23,18 @@ router.get('/project/:slug', (req, res) => {
     return res.status(404).json({ error: 'Projet non trouvé' });
   }
 
-  // Récupérer les formulaires du projet via form_order
-  let formsWithStatus = [];
-  if (project.form_order) {
-    try {
-      const formIds = JSON.parse(project.form_order);
-
-      // Valider que tous les IDs sont des entiers positifs
-      const validFormIds = formIds.filter(id => Number.isInteger(id) && id > 0);
-
-      if (validFormIds.length > 0) {
-        // Récupérer les formulaires dans l'ordre défini
-        const forms = db.prepare(`
-          SELECT id, title, slug, status
-          FROM forms
-          WHERE id IN (${validFormIds.map(() => '?').join(',')}) AND status = 'active'
-        `).all(...validFormIds);
-
-        // Trier selon l'ordre défini dans form_order
-        formsWithStatus = validFormIds
-          .map(id => forms.find(f => f.id === id))
-          .filter(Boolean)
-          .map(form => {
-            const submission = db.prepare(`
-              SELECT status FROM submissions WHERE form_id = ? ORDER BY updated_at DESC LIMIT 1
-            `).get(form.id);
-            return {
-              ...form,
-              submission_status: submission?.status || null
-            };
-          });
-      }
-    } catch (e) {}
-  }
+  // Instances actives du projet, dans l'ordre (source de vérité : project_id + position)
+  const formsWithStatus = db.prepare(`
+    SELECT id, title, slug, status
+    FROM forms
+    WHERE project_id = ? AND status = 'active'
+    ORDER BY position ASC
+  `).all(project.id).map(form => {
+    const submission = db.prepare(`
+      SELECT status FROM submissions WHERE form_id = ? ORDER BY updated_at DESC LIMIT 1
+    `).get(form.id);
+    return { ...form, submission_status: submission?.status || null };
+  });
 
   // Récupérer les données partagées
   const projectData = db.prepare(`

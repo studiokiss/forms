@@ -19,13 +19,16 @@ router.get('/', authMiddleware, (req, res) => {
 
   const params = [];
   if (project_id) {
+    // Instances d'un projet, dans l'ordre défini.
     const parsedProjectId = parseId(project_id);
     if (!parsedProjectId) return res.status(400).json({ error: 'ID de projet invalide' });
-    query += ' WHERE f.project_id = ?';
+    query += ' WHERE f.project_id = ? ORDER BY f.position ASC';
     params.push(parsedProjectId);
+  } else {
+    // Bibliothèque : uniquement les gabarits (hors projet).
+    query += ' WHERE f.project_id IS NULL ORDER BY f.created_at DESC';
   }
 
-  query += ' ORDER BY f.created_at DESC';
   res.json(db.prepare(query).all(...params));
 });
 

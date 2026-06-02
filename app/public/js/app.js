@@ -413,6 +413,10 @@ async function saveDraft() {
 // Submit form
 async function submitForm(e) {
     e.preventDefault();
+    // Neutraliser un auto-save planifié et attendre celui éventuellement en vol :
+    // garantit qu'on réutilise son submissionId au lieu de créer une 2e soumission.
+    clearTimeout(autoSaveTimeout);
+    while (isAutoSaving) { await new Promise(r => setTimeout(r, 50)); }
     updateFormData();
 
     // Validate required fields

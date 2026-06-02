@@ -13,15 +13,9 @@ function getProjectSubmissions(projectId, statusFilter) {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!project) return { error: 'Projet non trouvé', status: 404 };
 
-  let formIds = [];
-  if (project.form_order) {
-    try {
-      const parsed = JSON.parse(project.form_order);
-      formIds = Array.isArray(parsed) ? parsed.filter(id => Number.isInteger(id) && id > 0) : [];
-    } catch (e) {
-      formIds = [];
-    }
-  }
+  // Instances du projet, dans l'ordre (source de vérité : project_id + position)
+  const formIds = db.prepare('SELECT id FROM forms WHERE project_id = ? ORDER BY position ASC')
+    .all(projectId).map(f => f.id);
 
   if (formIds.length === 0) return { error: 'Aucun formulaire dans ce projet', status: 400 };
 

@@ -137,20 +137,20 @@ router.get('/form/:slug/submission', (req, res) => {
     return res.status(404).json({ error: 'Formulaire non trouvé' });
   }
 
-  if (submission_id) {
-    const submission = db.prepare(`
-      SELECT * FROM submissions
-      WHERE id = ? AND form_id = ?
-    `).get(submission_id, form.id);
+  // Avec submission_id : la soumission ciblée. Sans (reprise depuis un autre
+  // appareil, sans localStorage) : la dernière soumission du formulaire — sûr
+  // sous le modèle "1 client par projet", le lien projet faisant office d'accès.
+  const submission = submission_id
+    ? db.prepare('SELECT * FROM submissions WHERE id = ? AND form_id = ?').get(submission_id, form.id)
+    : db.prepare('SELECT * FROM submissions WHERE form_id = ? ORDER BY updated_at DESC LIMIT 1').get(form.id);
 
-    if (submission) {
-      return res.json({
-        id: submission.id,
-        data: JSON.parse(submission.data),
-        status: submission.status,
-        updated_at: submission.updated_at
-      });
-    }
+  if (submission) {
+    return res.json({
+      id: submission.id,
+      data: JSON.parse(submission.data),
+      status: submission.status,
+      updated_at: submission.updated_at
+    });
   }
 
   res.json(null);

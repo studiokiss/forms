@@ -1354,4 +1354,23 @@ describe('Modèle gabarit/instance de projet', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(gabaritAfter.status).toBe(200);
   });
+
+  test('reprise sans submission_id renvoie la dernière soumission (multi-appareils)', async () => {
+    const gabarit = await createTestForm(app, token, 'Reprise Form');
+    const project = await createTestProject(app, token, 'Reprise Projet');
+    const instance = (await request(app)
+      .post(`/api/admin/projects/${project.id}/forms`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ template_id: gabarit.id })).body;
+
+    await request(app)
+      .post(`/api/form/${instance.slug}/submit`)
+      .send({ data: { field1: 'valeur reprise' }, action: 'save' });
+
+    // GET public sans submission_id (autre appareil, pas de localStorage)
+    const res = await request(app).get(`/api/form/${instance.slug}/submission`);
+    expect(res.status).toBe(200);
+    expect(res.body).not.toBeNull();
+    expect(res.body.data.field1).toBe('valeur reprise');
+  });
 });

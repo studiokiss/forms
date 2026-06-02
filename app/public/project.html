@@ -173,6 +173,9 @@
                 // Build panels
                 buildPanels();
 
+                // Recharger les brouillons depuis le serveur (reprise multi-appareils)
+                await reloadDraftsFromServer();
+
                 // Render
                 renderProject();
 
@@ -218,6 +221,25 @@
             if (project.shared_data) {
                 sharedData = { ...project.shared_data, ...sharedData };
             }
+        }
+
+        // Reprise multi-appareils : recharge la dernière soumission serveur de
+        // chaque formulaire, sauf si un brouillon local (même appareil) existe déjà.
+        async function reloadDraftsFromServer() {
+            for (const panel of panels) {
+                if (panel.type !== 'form') continue;
+                if (formsData[panel.id] && Object.keys(formsData[panel.id]).length > 0) continue;
+                try {
+                    const res = await fetch(`/api/form/${panel.slug}/submission`);
+                    if (!res.ok) continue;
+                    const sub = await res.json();
+                    if (sub && sub.data) {
+                        formsData[panel.id] = sub.data;
+                        submissionIds[panel.id] = sub.id;
+                    }
+                } catch (e) {}
+            }
+            saveToStorage();
         }
 
         // Cache local de résilience (hors ligne) — n'affiche aucun message

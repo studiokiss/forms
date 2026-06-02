@@ -18,7 +18,7 @@ async function saveForm(status = null) {
     const newStatus = status || state.currentFormStatus;
 
     try {
-        const updatedForm = await api(`/admin/state.forms/${state.currentFormId}`, {
+        const updatedForm = await api(`/admin/forms/${state.currentFormId}`, {
             method: 'PUT',
             body: JSON.stringify({
                 title,

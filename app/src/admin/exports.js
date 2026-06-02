@@ -45,7 +45,7 @@ async function exportSubmissionPDF(id) {
 
 async function exportProjectPDF(projectId) {
     try {
-        const response = await fetch(`/api/admin/state.projects/${projectId}/submissions/pdf`, {
+        const response = await fetch(`/api/admin/projects/${projectId}/submissions/pdf`, {
             headers: {
                 'Authorization': `Bearer ${state.token}`
             }
@@ -121,7 +121,7 @@ async function exportSubmissionJPG(id) {
 
 async function exportProjectJPG(projectId) {
     try {
-        const response = await fetch(`/api/admin/state.projects/${projectId}/submissions/jpg`, {
+        const response = await fetch(`/api/admin/projects/${projectId}/submissions/jpg`, {
             headers: {
                 'Authorization': `Bearer ${state.token}`
             }

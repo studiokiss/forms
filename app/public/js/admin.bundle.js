@@ -718,7 +718,7 @@
                 </thead>
                 <tbody>
                     ${state.projects.map((p) => {
-        const formsCount = p.form_order ? JSON.parse(p.form_order).length : 0;
+        const formsCount = parseInt(p.forms_count) || 0;
         return `
                         <tr>
                             <td><strong>${escapeHtml(p.name)}</strong></td>
@@ -739,9 +739,7 @@
     }
   }
   async function openProjectModal(project = null) {
-    if (state.forms.length === 0) {
-      state.forms = await api("/admin/forms");
-    }
+    state.forms = await api("/admin/forms");
     document.getElementById("modal-project-title").textContent = project ? "Modifier le projet" : "Nouveau projet";
     document.getElementById("project-name-input").value = project?.name || "";
     document.getElementById("project-name-input").dataset.id = project?.id || "";
@@ -761,58 +759,86 @@
       radio.checked = radio.value === style;
     });
     const formsAvailable = document.getElementById("project-forms-available");
+    formsAvailable.innerHTML = state.forms.length ? state.forms.map((f) => `
+            <label class="checkbox-item">
+                <input type="checkbox" value="${parseInt(f.id)}" onchange="toggleProjectForm(this)">
+                <span>${escapeHtml(f.title)}</span>
+            </label>
+        `).join("") : `<p style="color: var(--gray-500); font-size: 13px;">Aucun gabarit. Cr\xE9ez des formulaires dans l'onglet Formulaires.</p>`;
     const formsList = document.getElementById("project-forms-list");
-    let selectedFormIds = [];
-    if (project && project.form_order) {
-      try {
-        const parsed = JSON.parse(project.form_order);
-        selectedFormIds = [...new Set(parsed)];
-      } catch (e) {
-      }
+    formsList.innerHTML = "";
+    if (project?.id) {
+      const instances = await api(`/admin/forms?project_id=${project.id}`);
+      formsList.innerHTML = instances.map(
+        (f) => renderProjectItem({ kind: "instance", id: f.id, title: f.title })
+      ).join("");
     }
-    formsAvailable.innerHTML = state.forms.map((f) => `
-        <label class="checkbox-item">
-            <input type="checkbox" value="${parseInt(f.id)}" ${selectedFormIds.includes(f.id) ? "checked" : ""} onchange="updateProjectFormsList()">
-            <span>${escapeHtml(f.title)}</span>
-        </label>
-    `).join("");
-    updateProjectFormsList(selectedFormIds);
+    refreshProjectItemsUI();
     openModal("modal-project");
   }
-  function updateProjectFormsList(initialOrder = null) {
-    const formsList = document.getElementById("project-forms-list");
-    const checkboxes = document.querySelectorAll('#project-forms-available input[type="checkbox"]:checked');
-    const selectedIds = Array.from(checkboxes).map((cb) => parseInt(cb.value));
-    if (selectedIds.length === 0) {
-      formsList.innerHTML = '<p style="color: var(--gray-500); font-size: 13px;">S\xE9lectionnez des formulaires ci-dessus</p>';
-      return;
-    }
-    const currentItems = formsList.querySelectorAll(".sortable-item");
-    const currentOrder = Array.from(currentItems).map((item) => parseInt(item.dataset.id));
-    let orderedIds = selectedIds;
-    const baseOrder = initialOrder && Array.isArray(initialOrder) ? initialOrder : currentOrder;
-    if (baseOrder.length > 0) {
-      orderedIds = baseOrder.filter((id) => selectedIds.includes(id));
-      selectedIds.forEach((id) => {
-        if (!orderedIds.includes(id)) orderedIds.push(id);
-      });
-    }
-    const uniqueOrderedIds = [...new Set(orderedIds)];
-    const orderedForms = uniqueOrderedIds.map((id) => state.forms.find((f) => f.id === id)).filter(Boolean);
-    formsList.innerHTML = orderedForms.map((form, i) => `
-        <div class="sortable-item" draggable="true" data-id="${parseInt(form.id)}">
-            <span class="item-number">${i + 1}</span>
+  function renderProjectItem(item) {
+    const isInstance = item.kind === "instance";
+    return `
+        <div class="sortable-item" draggable="true" data-id="${parseInt(item.id)}" data-kind="${escapeHtml(item.kind)}">
+            <span class="item-number"></span>
             <span class="drag-handle">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                 </svg>
             </span>
-            <div class="item-info">
-                <div class="item-title">${escapeHtml(form.title)}</div>
+            <div class="item-info"><div class="item-title">${escapeHtml(item.title)}</div></div>
+            <div class="item-actions">
+                ${isInstance ? `<button type="button" class="btn btn-sm btn-secondary" onclick="editProjectInstance(${parseInt(item.id)})">Modifier</button>` : '<span class="badge badge-draft">\xE0 ajouter</span>'}
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeProjectFormItem(this)">Retirer</button>
             </div>
         </div>
-    `).join("");
-    setupSortable(formsList);
+    `;
+  }
+  function toggleProjectForm(checkbox) {
+    const id = parseInt(checkbox.value);
+    const list = document.getElementById("project-forms-list");
+    if (checkbox.checked) {
+      const gabarit = state.forms.find((f) => f.id === id);
+      if (gabarit) list.insertAdjacentHTML("beforeend", renderProjectItem({ kind: "template", id, title: gabarit.title }));
+    } else {
+      const item = list.querySelector(`.sortable-item[data-kind="template"][data-id="${id}"]`);
+      if (item) item.remove();
+    }
+    refreshProjectItemsUI();
+  }
+  function removeProjectFormItem(btn) {
+    const item = btn.closest(".sortable-item");
+    if (!item) return;
+    if (item.dataset.kind === "template") {
+      const cb = document.querySelector(`#project-forms-available input[value="${item.dataset.id}"]`);
+      if (cb) cb.checked = false;
+    }
+    item.remove();
+    refreshProjectItemsUI();
+  }
+  function editProjectInstance(id) {
+    closeModal("modal-project");
+    editForm(id);
+  }
+  function refreshProjectItemsUI() {
+    const list = document.getElementById("project-forms-list");
+    const items = Array.from(list.querySelectorAll(".sortable-item"));
+    const placeholder = list.querySelector(".forms-placeholder");
+    if (items.length === 0) {
+      if (!placeholder) {
+        list.insertAdjacentHTML(
+          "beforeend",
+          '<p class="forms-placeholder" style="color: var(--gray-500); font-size: 13px;">Cochez des gabarits ci-dessus pour composer le projet.</p>'
+        );
+      }
+      return;
+    }
+    if (placeholder) placeholder.remove();
+    items.forEach((item, i) => {
+      const numberEl = item.querySelector(".item-number");
+      if (numberEl) numberEl.textContent = i + 1;
+    });
+    setupSortable(list);
   }
   function setupSortable(container) {
     const items = container.querySelectorAll(".sortable-item");
@@ -848,10 +874,9 @@
       if (numberEl) numberEl.textContent = i + 1;
     });
   }
-  function getFormOrder() {
-    const container = document.getElementById("project-forms-list");
-    const items = container.querySelectorAll(".sortable-item");
-    return Array.from(items).map((item) => parseInt(item.dataset.id));
+  function collectProjectItems() {
+    const items = document.querySelectorAll("#project-forms-list .sortable-item");
+    return Array.from(items).map((item) => ({ kind: item.dataset.kind, id: parseInt(item.dataset.id) }));
   }
   async function saveProject() {
     const name = document.getElementById("project-name-input").value.trim();
@@ -862,21 +887,29 @@
       return;
     }
     try {
-      const data = { name, style };
-      const formOrder = getFormOrder();
-      if (formOrder.length > 0) {
-        data.form_order = formOrder;
-      }
+      const items = collectProjectItems();
       let projectId = id;
       if (id) {
+        const order = [];
+        for (const item of items) {
+          if (item.kind === "instance") {
+            order.push(item.id);
+          } else {
+            const inst = await api(`/admin/projects/${id}/forms`, {
+              method: "POST",
+              body: JSON.stringify({ template_id: item.id })
+            });
+            order.push(inst.id);
+          }
+        }
         await api(`/admin/projects/${id}`, {
           method: "PUT",
-          body: JSON.stringify(data)
+          body: JSON.stringify({ name, style, form_order: order })
         });
       } else {
         const newProject = await api("/admin/projects", {
           method: "POST",
-          body: JSON.stringify(data)
+          body: JSON.stringify({ name, style, template_ids: items.map((i) => i.id) })
         });
         projectId = newProject.id;
       }
@@ -1090,7 +1123,7 @@
       projectsHtml = `
             <div class="dashboard-list">
                 ${allProjects.map((p) => {
-        const formsCount = p.form_order ? JSON.parse(p.form_order).length : 0;
+        const formsCount = parseInt(p.forms_count) || 0;
         return `
                         <div class="dashboard-item">
                             <div class="dashboard-item-info">
@@ -1480,14 +1513,8 @@
         `;
       return;
     }
-    let formIds = [];
-    if (project.form_order) {
-      try {
-        formIds = JSON.parse(project.form_order);
-      } catch (e) {
-      }
-    }
-    if (formIds.length === 0) {
+    const instances = await api(`/admin/forms?project_id=${state.currentProjectId}`);
+    if (!Array.isArray(instances) || instances.length === 0) {
       document.getElementById("submissions-list").innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-title">Aucun formulaire</div>
@@ -1497,20 +1524,19 @@
       return;
     }
     state.projectSubmissionsData = [];
-    for (const formId of formIds) {
+    for (const form of instances) {
       try {
-        const subs = await api(`/admin/forms/${formId}/submissions`);
-        const form = state.forms.find((f) => f.id === formId);
+        const subs = await api(`/admin/forms/${form.id}/submissions`);
         if (!Array.isArray(subs)) continue;
-        const sortedSubs = subs.map((s) => ({ ...s, form_title: form?.title || "Formulaire inconnu", form_id: formId })).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+        const sortedSubs = subs.map((s) => ({ ...s, form_title: form.title, form_id: form.id })).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
         state.projectSubmissionsData.push({
-          formId,
-          formTitle: form?.title || "Formulaire inconnu",
-          formSlug: form?.slug,
+          formId: form.id,
+          formTitle: form.title,
+          formSlug: form.slug,
           submissions: sortedSubs
         });
       } catch (e) {
-        console.error(`Erreur chargement soumissions form ${formId}:`, e);
+        console.error(`Erreur chargement soumissions form ${form.id}:`, e);
       }
     }
     const filteredData = state.projectSubmissionsData.map((formData) => {
@@ -1533,7 +1559,7 @@
     }
     document.getElementById("submissions-list").innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <span style="color: var(--gray-600);">${formIds.length} formulaire(s), ${totalSubmissions} soumission(s)</span>
+            <span style="color: var(--gray-600);">${instances.length} formulaire(s), ${totalSubmissions} soumission(s)</span>
             <button class="btn btn-primary" onclick="exportProjectJPG(${parseInt(state.currentProjectId)})">
                 Exporter tout (ZIP)
             </button>
@@ -1747,7 +1773,9 @@
     loadDashboard,
     loadProjects,
     openProjectModal,
-    updateProjectFormsList,
+    toggleProjectForm,
+    removeProjectFormItem,
+    editProjectInstance,
     saveProject,
     previewLogo,
     removeLogo,

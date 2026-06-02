@@ -90,7 +90,7 @@ async function loadDashboard() {
         projectsHtml = `
             <div class="dashboard-list">
                 ${allProjects.map(p => {
-                    const formsCount = p.form_order ? JSON.parse(p.form_order).length : 0;
+                    const formsCount = parseInt(p.forms_count) || 0;
                     return `
                         <div class="dashboard-item">
                             <div class="dashboard-item-info">

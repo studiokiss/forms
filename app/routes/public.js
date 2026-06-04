@@ -204,7 +204,16 @@ router.post('/form/:slug/submit', (req, res) => {
     const existing = db.prepare('SELECT status FROM submissions WHERE id = ? AND form_id = ?').get(parsedSubmissionId, form.id);
 
     if (existing) {
-      wasAlreadySubmitted = existing.status === 'submitted' || existing.status === 'validated';
+      // validated/archived sont posés par l'admin : le client ne peut ni
+      // écraser les données ni rétrograder le statut. Déverrouillage côté
+      // admin uniquement (remettre la soumission en 'submitted').
+      if (existing.status === 'validated' || existing.status === 'archived') {
+        return res.status(409).json({
+          error: 'Cette soumission a été validée par Studio Kiss et ne peut plus être modifiée. Contactez-nous pour la rouvrir.'
+        });
+      }
+
+      wasAlreadySubmitted = existing.status === 'submitted';
 
       // Mise à jour
       db.prepare(`

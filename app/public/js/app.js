@@ -17,9 +17,12 @@ let formData = {};
 let formStructure = null;
 let submissionId = null;
 let wasAlreadySubmitted = false;
+let isLocked = false; // soumission validée/archivée par l'admin : lecture seule
 let autoSaveTimeout = null;
 let isAutoSaving = false;
 let pendingAutoSave = false;
+
+const LOCKED_MESSAGE = 'Cette soumission a été validée par Studio Kiss et ne peut plus être modifiée. Contactez-nous pour la rouvrir.';
 
 // Get slug and prefill from URL: /f/slug or /f/slug/prefillData
 const pathParts = window.location.pathname.split('/f/')[1]?.split('/') || [];
@@ -40,7 +43,9 @@ async function api(endpoint, options = {}) {
     const data = await res.json();
 
     if (!res.ok) {
-        throw new Error(data.error || 'Erreur serveur');
+        const error = new Error(data.error || 'Erreur serveur');
+        error.status = res.status;
+        throw error;
     }
 
     return data;
@@ -88,6 +93,7 @@ async function loadExistingData() {
                 submissionId = submission.id;
                 formData = submission.data;
                 wasAlreadySubmitted = submission.status === 'submitted' || submission.status === 'validated';
+                isLocked = submission.status === 'validated' || submission.status === 'archived';
                 return;
             }
         } catch (e) {
@@ -103,6 +109,21 @@ async function loadExistingData() {
             formData = parsed.data || {};
             submissionId = parsed.submissionId || null;
             wasAlreadySubmitted = parsed.wasAlreadySubmitted || false;
+
+            // Le statut n'est pas persisté localement : l'admin a pu verrouiller
+            // la soumission entre-temps. En cas de verrou, afficher la version
+            // serveur (validée) plutôt qu'un cache local divergent.
+            if (submissionId) {
+                try {
+                    const submission = await api(`/form/${slug}/submission?submission_id=${submissionId}`);
+                    if (submission) {
+                        isLocked = submission.status === 'validated' || submission.status === 'archived';
+                        if (isLocked) formData = submission.data;
+                    }
+                } catch (e) {
+                    // Hors ligne : le serveur tranchera (409) à la première sauvegarde
+                }
+            }
             return; // Données existantes, on ne prérempli pas
         } catch (e) {
             // Invalid stored data, ignore
@@ -145,6 +166,22 @@ function renderForm() {
 
     // Apply conditional visibility
     updateConditionalFields();
+
+    if (isLocked) lockForm(LOCKED_MESSAGE);
+}
+
+// Passe le formulaire en lecture seule : soumission verrouillée par l'admin.
+function lockForm(message) {
+    isLocked = true;
+    clearTimeout(autoSaveTimeout);
+    pendingAutoSave = false;
+    document.querySelectorAll('#questionnaire-form input, #questionnaire-form select, #questionnaire-form textarea')
+        .forEach(el => { el.disabled = true; });
+    document.getElementById('save-draft-btn').classList.add('hidden');
+    document.getElementById('submit-btn').classList.add('hidden');
+    const warning = document.getElementById('submission-warning');
+    warning.textContent = message;
+    warning.classList.remove('hidden');
 }
 
 // Create field element
@@ -340,6 +377,7 @@ function setupAutoSave() {
 }
 
 function scheduleAutoSave() {
+    if (isLocked) return;
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(autoSaveToServer, 1500);
 }
@@ -370,11 +408,17 @@ async function autoSaveToServer() {
         saveToLocalStorage();
         showAutoSaveMessage('Brouillon enregistré');
     } catch (error) {
+        // 409 = soumission verrouillée par l'admin, pas un problème réseau
+        if (error.status === 409) {
+            lockForm(error.message);
+            return;
+        }
         saveToLocalStorage();
         showAutoSaveMessage('Hors ligne — sauvegardé sur cet appareil');
     } finally {
         isAutoSaving = false;
-        if (pendingAutoSave) { pendingAutoSave = false; scheduleAutoSave(); }
+        // !isLocked : ne dépend pas du reset de pendingAutoSave fait par lockForm
+        if (pendingAutoSave && !isLocked) { pendingAutoSave = false; scheduleAutoSave(); }
     }
 }
 
@@ -389,6 +433,7 @@ function showAutoSaveMessage(message) {
 
 // Save draft to server
 async function saveDraft() {
+    if (isLocked) return;
     updateFormData();
 
     try {
@@ -406,6 +451,8 @@ async function saveDraft() {
         showAutoSaveMessage('Brouillon sauvegardé sur le serveur');
 
     } catch (error) {
+        // 409 : le bandeau de verrouillage suffit, pas d'alert en doublon
+        if (error.status === 409) { lockForm(error.message); return; }
         alert('Erreur: ' + error.message);
     }
 }
@@ -413,10 +460,12 @@ async function saveDraft() {
 // Submit form
 async function submitForm(e) {
     e.preventDefault();
+    if (isLocked) return;
     // Neutraliser un auto-save planifié et attendre celui éventuellement en vol :
     // garantit qu'on réutilise son submissionId au lieu de créer une 2e soumission.
     clearTimeout(autoSaveTimeout);
     while (isAutoSaving) { await new Promise(r => setTimeout(r, 50)); }
+    if (isLocked) return; // l'auto-save en vol a pu recevoir un 409 et verrouiller
     updateFormData();
 
     // Validate required fields
@@ -461,6 +510,7 @@ async function submitForm(e) {
         document.getElementById('success-view').classList.remove('hidden');
 
     } catch (error) {
+        if (error.status === 409) { lockForm(error.message); return; }
         alert('Erreur: ' + error.message);
     }
 }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const discord = require('../services/discord');
 
 // ============ PROJETS ============
 
@@ -182,7 +183,7 @@ router.post('/form/:slug/submit', (req, res) => {
     return res.status(400).json({ error: 'Action invalide' });
   }
 
-  const form = db.prepare('SELECT id, status FROM forms WHERE slug = ?').get(slug);
+  const form = db.prepare('SELECT id, title, status, project_id FROM forms WHERE slug = ?').get(slug);
 
   if (!form) {
     return res.status(404).json({ error: 'Formulaire non trouvé' });
@@ -237,6 +238,20 @@ router.post('/form/:slug/submit', (req, res) => {
         : 'Votre formulaire a été soumis avec succès !')
       : 'Brouillon sauvegardé'
   });
+
+  // Notification Discord après la réponse HTTP : fire-and-forget,
+  // l'envoi ne conditionne jamais le résultat de la soumission.
+  if (action === 'submit' && form.project_id) {
+    const project = db.prepare('SELECT name, discord_webhook FROM projects WHERE id = ?').get(form.project_id);
+    if (project && project.discord_webhook) {
+      discord.notifySubmission({
+        webhookUrl: project.discord_webhook,
+        projectName: project.name,
+        formTitle: form.title,
+        isUpdate: wasAlreadySubmitted
+      });
+    }
+  }
 });
 
 module.exports = router;

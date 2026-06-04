@@ -6,6 +6,18 @@ const fs = require('fs');
 const { authMiddleware, parseId } = require('./auth');
 const { upload, validateFileContent, uploadsDir } = require('./upload');
 const { nanoid } = require('../../utils/nanoid');
+const { isValidWebhookUrl, sendTest } = require('../../services/discord');
+
+// Normalise le champ discord_webhook d'un payload : null si vide,
+// l'URL si valide, sinon { error } à renvoyer en 400.
+function parseWebhookInput(value) {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return { webhook: null };
+  if (!isValidWebhookUrl(trimmed)) {
+    return { error: 'URL de webhook Discord invalide (attendu : https://discord.com/api/webhooks/…)' };
+  }
+  return { webhook: trimmed };
+}
 
 // Clone un formulaire (gabarit) en instance indépendante rattachée à un projet.
 function instantiateTemplate(templateId, projectId, position) {
@@ -31,12 +43,15 @@ router.get('/', authMiddleware, (req, res) => {
 
 // Créer un projet. template_ids = gabarits à instancier (clonés), dans l'ordre.
 router.post('/', authMiddleware, (req, res) => {
-  const { name, style, template_ids } = req.body;
+  const { name, style, template_ids, discord_webhook } = req.body;
   if (!name) return res.status(400).json({ error: 'Le nom est requis' });
 
+  const parsed = parseWebhookInput(discord_webhook);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+
   const create = db.transaction(() => {
-    const result = db.prepare('INSERT INTO projects (name, slug, style) VALUES (?, ?, ?)')
-      .run(name, nanoid(10), style || 'google');
+    const result = db.prepare('INSERT INTO projects (name, slug, style, discord_webhook) VALUES (?, ?, ?, ?)')
+      .run(name, nanoid(10), style || 'google', parsed.webhook);
     const projectId = result.lastInsertRowid;
     if (Array.isArray(template_ids)) {
       template_ids
@@ -50,12 +65,28 @@ router.post('/', authMiddleware, (req, res) => {
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId));
 });
 
+// Tester une URL de webhook Discord (avant ou après sauvegarde du projet).
+// Sans ça, une URL erronée échouerait en silence côté soumission.
+router.post('/webhook-test', authMiddleware, async (req, res) => {
+  const parsed = parseWebhookInput(req.body.url);
+  if (parsed.error || !parsed.webhook) {
+    return res.status(400).json({ error: parsed.error || 'URL de webhook requise' });
+  }
+
+  try {
+    await sendTest(parsed.webhook);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(502).json({ error: `Échec de l'envoi : ${err.message}` });
+  }
+});
+
 // Modifier un projet
 router.put('/:id', authMiddleware, (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'ID invalide' });
 
-  const { name, slug, shared_sections, form_order, style, logo } = req.body;
+  const { name, slug, shared_sections, form_order, style, logo, discord_webhook } = req.body;
 
   const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Projet non trouvé' });
@@ -65,13 +96,22 @@ router.put('/:id', authMiddleware, (req, res) => {
     if (slugExists) return res.status(400).json({ error: 'Ce slug est déjà utilisé' });
   }
 
+  // Absent = inchangé ; chaîne vide = webhook retiré ; URL invalide = 400.
+  let discordWebhook = existing.discord_webhook;
+  if (discord_webhook !== undefined) {
+    const parsed = parseWebhookInput(discord_webhook);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    discordWebhook = parsed.webhook;
+  }
+
   const apply = db.transaction(() => {
-    db.prepare('UPDATE projects SET name = ?, slug = ?, shared_sections = ?, style = ?, logo = ? WHERE id = ?').run(
+    db.prepare('UPDATE projects SET name = ?, slug = ?, shared_sections = ?, style = ?, logo = ?, discord_webhook = ? WHERE id = ?').run(
       name || existing.name,
       slug || existing.slug,
       shared_sections ? JSON.stringify(shared_sections) : existing.shared_sections,
       style || existing.style || 'google',
       logo !== undefined ? logo : existing.logo,
+      discordWebhook,
       id
     );
 

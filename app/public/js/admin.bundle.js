@@ -743,6 +743,7 @@
     document.getElementById("modal-project-title").textContent = project ? "Modifier le projet" : "Nouveau projet";
     document.getElementById("project-name-input").value = project?.name || "";
     document.getElementById("project-name-input").dataset.id = project?.id || "";
+    document.getElementById("project-webhook-input").value = project?.discord_webhook || "";
     state.currentProjectLogo = project?.logo || null;
     state.pendingLogoFile = null;
     document.getElementById("logo-input").value = "";
@@ -882,6 +883,7 @@
     const name = document.getElementById("project-name-input").value.trim();
     const id = document.getElementById("project-name-input").dataset.id;
     const style = document.querySelector('input[name="project-style"]:checked')?.value || "google";
+    const discordWebhook = document.getElementById("project-webhook-input").value.trim();
     if (!name) {
       alert("Le nom est requis");
       return;
@@ -904,12 +906,12 @@
         }
         await api(`/admin/projects/${id}`, {
           method: "PUT",
-          body: JSON.stringify({ name, style, form_order: order })
+          body: JSON.stringify({ name, style, form_order: order, discord_webhook: discordWebhook })
         });
       } else {
         const newProject = await api("/admin/projects", {
           method: "POST",
-          body: JSON.stringify({ name, style, template_ids: items.map((i) => i.id) })
+          body: JSON.stringify({ name, style, template_ids: items.map((i) => i.id), discord_webhook: discordWebhook })
         });
         projectId = newProject.id;
       }
@@ -972,6 +974,28 @@
     document.getElementById("logo-input").value = "";
     document.getElementById("logo-preview-container").style.display = "none";
     document.getElementById("logo-upload-container").style.display = "block";
+  }
+  async function testProjectWebhook() {
+    const url = document.getElementById("project-webhook-input").value.trim();
+    if (!url) {
+      alert("Renseignez d'abord l'URL du webhook Discord");
+      return;
+    }
+    const btn = document.getElementById("project-webhook-test-btn");
+    btn.disabled = true;
+    btn.textContent = "Envoi\u2026";
+    try {
+      await api("/admin/projects/webhook-test", {
+        method: "POST",
+        body: JSON.stringify({ url })
+      });
+      alert("Message de test envoy\xE9 \u2014 v\xE9rifiez le salon Discord");
+    } catch (error) {
+      alert("\xC9chec : " + error.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Tester";
+    }
   }
   async function openMediaLibrary() {
     await loadMediaLibrary();
@@ -1789,6 +1813,7 @@ Pour confirmer, tape le nom exact du projet :`
     saveProject,
     previewLogo,
     removeLogo,
+    testProjectWebhook,
     openMediaLibrary,
     uploadMedia,
     deleteMedia,

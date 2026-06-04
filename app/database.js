@@ -86,6 +86,9 @@ try {
   db.exec(`ALTER TABLE projects ADD COLUMN logo TEXT`);
 } catch (e) {}
 try {
+  db.exec(`ALTER TABLE projects ADD COLUMN discord_webhook TEXT`);
+} catch (e) {}
+try {
   db.exec(`ALTER TABLE forms ADD COLUMN position INTEGER DEFAULT 0`);
 } catch (e) {}
 

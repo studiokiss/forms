@@ -324,6 +324,14 @@
                     </div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Webhook Discord (optionnel)</label>
+                    <p style="font-size: 13px; color: var(--gray-500); margin-bottom: 12px;">Notifie ce salon Discord à chaque soumission finale d'un client</p>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="url" id="project-webhook-input" class="form-input" placeholder="https://discord.com/api/webhooks/…" style="flex: 1;">
+                        <button type="button" class="btn btn-secondary" id="project-webhook-test-btn" onclick="testProjectWebhook()">Tester</button>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Formulaires du projet</label>
                     <p style="font-size: 13px; color: var(--gray-500); margin-bottom: 12px;">Sélectionnez les formulaires à inclure, puis glissez-déposez pour les réordonner</p>
                     <div id="project-forms-available" class="checkbox-list" style="margin-bottom: 16px;"></div>

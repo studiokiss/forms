@@ -4,7 +4,7 @@ import { navigateTo, handleRoute } from './router.js';
 import { api, login, logout, downloadBackup, checkSession } from './api.js';
 import { loadBackups, createBackup, downloadBackupFile, deleteBackup } from './backups.js';
 import { showView, showAdminView, loadDashboard } from './dashboard.js';
-import { loadProjects, openProjectModal, toggleProjectForm, removeProjectFormItem, editProjectInstance, saveProject, previewLogo, removeLogo, openMediaLibrary, uploadMedia, deleteMedia, selectMedia, editProject, deleteProject } from './projects.js';
+import { loadProjects, openProjectModal, toggleProjectForm, removeProjectFormItem, editProjectInstance, saveProject, previewLogo, removeLogo, testProjectWebhook, openMediaLibrary, uploadMedia, deleteMedia, selectMedia, editProject, deleteProject } from './projects.js';
 import { loadForms, openFormModal, createForm, editForm, duplicateForm, deleteForm } from './forms.js';
 import { renderEditor, addSection, editSection, saveSection, deleteSection, addField, editField, saveField, deleteField, toggleFieldOptions, toggleConditionValue } from './editor.js';
 import { saveForm, updateFormStatusBadge, updateClientLinkButton, previewForm, previewSavedForm } from './form-status.js';
@@ -25,7 +25,7 @@ Object.assign(window, {
     loadBackups, createBackup, downloadBackupFile, deleteBackup,
     showView, showAdminView, loadDashboard,
     loadProjects, openProjectModal, toggleProjectForm, removeProjectFormItem, editProjectInstance, saveProject,
-    previewLogo, removeLogo, openMediaLibrary, uploadMedia, deleteMedia, selectMedia,
+    previewLogo, removeLogo, testProjectWebhook, openMediaLibrary, uploadMedia, deleteMedia, selectMedia,
     editProject, deleteProject,
     loadForms, openFormModal, createForm, editForm, duplicateForm, deleteForm,
     renderEditor, addSection, editSection, saveSection, deleteSection,
